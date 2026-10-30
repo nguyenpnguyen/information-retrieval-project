@@ -1,0 +1,6 @@
+server:
+  port: ${SERVER_PORT:2222}
+spring:
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://10.177.29.134:27017/HUST_2026_IT4863_TEST?serverSelectionTimeoutMS=5000}

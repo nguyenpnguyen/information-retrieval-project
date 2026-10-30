@@ -1,0 +1,113 @@
+package com.hust.crawler.storage.controller;
+
+import com.hust.crawler.storage.submission.SubmittedContent;
+import com.hust.crawler.storage.submission.SubmittedContentService;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import java.time.Instant;
+import java.util.List;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+class AddContentControllerTest {
+    SubmittedContentService service;
+    MockMvc mvc;
+    String body(String links) {
+        return """
+            {"url":"https://hust.edu.vn/tin-tuc1", "format":"HTML", "title":"Tin tức 1",
+             "content":"Nội dung bóc tách", "out-links":%s}
+            """.formatted(links);
+    }
+    @BeforeEach void setup() {
+        service = mock(SubmittedContentService.class);
+        mvc = MockMvcBuilders.standaloneSetup(new AddContentController(service)).build();
+        when(service.save(anyString(), anyString(), anyString(), anyString(), nullable(String.class), nullable(String.class), anyList()))
+                .thenAnswer(i -> new SubmittedContent(i.getArgument(0), i.getArgument(0), i.getArgument(1),
+                        i.getArgument(2), i.getArgument(3), i.getArgument(4), i.getArgument(5), i.getArgument(6), Instant.EPOCH, Instant.EPOCH));
+    }
+    @Test void acceptsTypedRequestAndNormalizesFormat() throws Exception {
+        mvc.perform(post("/add").contentType("application/json")
+                .content(body("[{\"url\":\"https://hust.edu.vn/2\",\"text\":\"Liên kết\"}]")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.format").value("html"))
+                .andExpect(jsonPath("$['out-links'][0].text").value("Liên kết"));
+        verify(service).save("https://hust.edu.vn/tin-tuc1", "html", "Tin tức 1", "Nội dung bóc tách", null, null,
+                List.of(new SubmittedContent.OutLink("https://hust.edu.vn/2", "Liên kết")));
+    }
+    @Test void acceptsMultipleLinks() throws Exception {
+        mvc.perform(post("/add").contentType("application/json").content(body("""
+            [{"url":"https://hust.edu.vn/2","text":"Hai"},{"url":"https://hust.edu.vn/3","text":""}]
+            """))).andExpect(status().isOk()).andExpect(jsonPath("$['out-links'].length()").value(2));
+    }
+    @Test void rejectsInvalidLinkWithoutWriting() throws Exception {
+        mvc.perform(post("/add").contentType("application/json").content(body("[{\"url\":\"javascript:alert(1)\",\"text\":\"X\"}]")))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(service);
+    }
+    @Test void rejectsMalformedJsonAndMissingFields() throws Exception {
+        mvc.perform(post("/add").contentType("application/json").content("{broken"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(post("/add").contentType("application/json").content("{}"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(post("/add").contentType("application/json").content(body("[\"https://hust.edu.vn/2\"]")))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(service);
+    }
+    @Test void rejectsNullLinkAndMissingLinkText() throws Exception {
+        for (String links : List.of("[null]", "[{\"url\":\"https://hust.edu.vn/2\"}]")) {
+            mvc.perform(post("/add").contentType("application/json").content(body(links)))
+                    .andExpect(status().isBadRequest());
+        }
+        verifyNoInteractions(service);
+    }
+    @Test void acceptsBase64ImageWithoutText() throws Exception {
+        mvc.perform(post("/add").contentType("application/json").content("""
+            {"url":"https://hust.edu.vn/image.png", "format":"png", "title":"Ảnh",
+             "base64":"aGVsbG8=", "out-links":[]}
+            """))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.base64").value("aGVsbG8="))
+                .andExpect(jsonPath("$.content").value(""));
+        verify(service).save("https://hust.edu.vn/image.png", "png", "Ảnh", "", "aGVsbG8=", null, List.of());
+    }
+    @Test void rejectsInvalidBase64() throws Exception {
+        for (String value : List.of("???", "", "data:image/png;base64,aGVsbG8=")) {
+            String request = body("[]").replace("\"out-links\":", "\"base64\":\"" + value + "\",\"out-links\":");
+            mvc.perform(post("/add").contentType("application/json").content(request))
+                    .andExpect(status().isBadRequest());
+        }
+        verifyNoInteractions(service);
+    }
+    @Test void usesOnlyOutlinkTextWithoutResourceIntro() throws Exception {
+        mvc.perform(post("/add").contentType("application/json").content(body("""
+            [{"url":"https://hust.edu.vn/2","text":"Giới thiệu liên kết"}]
+            """)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.intro").doesNotExist())
+                .andExpect(jsonPath("$['out-links'][0].text").value("Giới thiệu liên kết"));
+        verify(service).save("https://hust.edu.vn/tin-tuc1", "html", "Tin tức 1", "Nội dung bóc tách",
+                null, null, List.of(new SubmittedContent.OutLink("https://hust.edu.vn/2", "Giới thiệu liên kết")));
+    }
+    @Test void ignoresIntroFieldAndDoesNotReturnIt() throws Exception {
+        mvc.perform(post("/add").contentType("application/json")
+                .content(body("[]").replace("\"out-links\":", "\"intro\":\"Mo ta\",\"out-links\":")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.intro").doesNotExist());
+        verify(service).save("https://hust.edu.vn/tin-tuc1", "html", "Tin tức 1", "Nội dung bóc tách", null, null, List.of());
+    }
+    @Test void acceptsOriginForPicturesAndOtherDocuments() throws Exception {
+        for (String format : List.of("png", "pdf")) {
+            String request = body("[]").replace("\"HTML\"", "\"" + format + "\"")
+                    .replace("\"out-links\":", "\"origin\":\"https://hust.edu.vn/source\",\"out-links\":");
+            mvc.perform(post("/add").contentType("application/json").content(request))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.origin").value("https://hust.edu.vn/source"));
+        }
+    }
+    @Test void reportsUnavailableDatabase() throws Exception {
+        when(service.save(anyString(),anyString(),anyString(),anyString(),nullable(String.class),nullable(String.class),anyList()))
+                .thenThrow(new DataAccessResourceFailureException("down"));
+        mvc.perform(post("/add").contentType("application/json").content(body("[]")))
+                .andExpect(status().isServiceUnavailable());
+    }
+}

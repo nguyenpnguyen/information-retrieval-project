@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HUST crawler</title>
+<!-- Mở thẳng file này trong trình duyệt. Địa chỉ service đổi bằng query: dashboard.html?mediator=http://ip:5200&storage=http://ip:2222&reader=http://ip:6600&search=http://ip:7700 -->
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --text: #1d2330; --muted: #6b7385; --line: #e3e6ec;
+    --accent: #2f6fde; --ok: #1f9d55; --warn: #c27c0e; --bad: #d64545;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 40px; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 18px; }
+  h1 { font-size: 20px; margin: 0; margin-right: auto; }
+  h2 { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase;
+    letter-spacing: .04em; margin: 24px 0 10px; }
+  .pill { padding: 4px 10px; border-radius: 999px; font-weight: 600; font-size: 13px; background: var(--line); }
+  .pill.run { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+  .pill.stop { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
+  .pill.down { background: color-mix(in srgb, var(--bad) 18%, transparent); color: var(--bad); }
+  button { font: inherit; font-weight: 600; border: 0; border-radius: 8px; padding: 8px 16px; cursor: pointer;
+    color: #fff; background: var(--accent); }
+  button.stop { background: var(--bad); }
+  button:disabled { opacity: .45; cursor: default; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .card .label { color: var(--muted); font-size: 12px; }
+  .card .value { font-size: 24px; font-weight: 650; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .card .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  #chart { width: 100%; height: 160px; display: block; }
+  .chart-card { padding: 12px 14px 6px; }
+  .legend { display: flex; gap: 16px; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .legend i { display: inline-block; width: 10px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+  table { width: 100%; border-collapse: collapse; }
+  td, th { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  td.url { word-break: break-all; }
+  td.url a { color: var(--accent); text-decoration: none; }
+  .tag { font-size: 12px; padding: 1px 7px; border-radius: 6px; background: var(--line); white-space: nowrap; }
+  .services { display: flex; flex-wrap: wrap; gap: 14px; color: var(--muted); font-size: 13px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 6px; }
+  .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); }
+  .muted { color: var(--muted); }
+  [hidden] { display: none !important; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+  .tab { background: none; color: var(--muted); border-radius: 8px 8px 0 0; border-bottom: 2px solid transparent; }
+  .tab.on { color: var(--accent); border-bottom-color: var(--accent); }
+  .bar { display: flex; gap: 8px; }
+  input[type=search] { flex: 1; min-width: 0; font: inherit; padding: 8px 12px; border: 1px solid var(--line);
+    border-radius: 8px; background: var(--card); color: var(--text); }
+  select { font: inherit; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); }
+  button.ghost { background: var(--line); color: var(--text); }
+  .opts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 12px 0; }
+  .chip { background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; font-weight: 500; }
+  .chip.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  #status { color: var(--muted); font-size: 13px; margin: 6px 0 12px; }
+  .hit { margin-bottom: 10px; cursor: pointer; }
+  .hit.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .hit a.t { font-size: 16px; font-weight: 600; color: var(--accent); text-decoration: none; word-break: break-word; }
+  .hit a.t:hover { text-decoration: underline; }
+  .meta { color: var(--muted); font-size: 12px; margin: 2px 0 6px; word-break: break-all; }
+  .snip { word-break: break-word; }
+  .snip b { background: color-mix(in srgb, var(--warn) 22%, transparent); font-weight: 650; }
+  .pager { display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 14px; }
+  .foot { margin-top: 24px; display: flex; gap: 10px; align-items: center; color: var(--muted); font-size: 12px; }
+  #split.open { display: grid; grid-template-columns: 45% 1fr; gap: 16px; align-items: start; }
+  #preview { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; margin: 0; cursor: auto; }
+  #pv-head { display: flex; gap: 10px; align-items: flex-start; }
+  #pv-head > div { flex: 1; min-width: 0; }
+  #pv-title { font-size: 16px; font-weight: 600; word-break: break-word; }
+  #pv-url a { color: var(--accent); }
+  #pv-text { white-space: pre-wrap; word-break: break-word; margin-top: 10px; }
+  #pv-body img { max-width: 100%; margin-top: 10px; }
+  @media (max-width: 899px) {
+    #split.open { display: block; }
+    #preview { position: fixed; inset: 0; z-index: 10; max-height: none; border-radius: 0; }
+  }
+  .table-wrap { overflow-x: auto; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>HUST crawler</h1>
+    <span class="crawl-only"><span id="state" class="pill">…</span>
+    <button id="start">Chạy</button>
+    <button id="stop" class="stop">Dừng</button></span>
+  </header>
+  <nav class="tabs">
+    <button class="tab" data-tab="crawl">Theo dõi crawl</button>
+    <button class="tab" data-tab="search">Tìm kiếm</button>
+  </nav>
+  <section id="tab-crawl">
+  <div class="services">
+    <span><span class="dot" id="dot-mediator"></span>Điều khiển</span>
+    <span><span class="dot" id="dot-reader"></span>Đọc nội dung <span id="reader-busy"></span></span>
+    <span><span class="dot" id="dot-storage"></span>Lưu trữ + Mongo</span>
+    <span class="muted" id="updated"></span>
+  </div>
+
+  <h2>Hàng đợi (mediator)</h2>
+  <div class="grid">
+    <div class="card"><div class="label">Tổng url</div><div class="value" id="total">–</div><div class="sub">kể cả url mới tìm thấy</div></div>
+    <div class="card"><div class="label">Chờ gửi</div><div class="value" id="due">–</div></div>
+    <div class="card"><div class="label">Đã gửi</div><div class="value" id="sent">–</div><div class="sub" id="sent-pct"></div></div>
+    <div class="card"><div class="label">Tốc độ</div><div class="value" id="rate">–</div><div class="sub">url/phút, 5 phút gần nhất</div></div>
+    <div class="card"><div class="label">Ước tính xong</div><div class="value" id="eta">–</div><div class="sub">với hàng đợi hiện tại</div></div>
+  </div>
+
+  <h2>Dữ liệu đã lưu (Mongo)</h2>
+  <div class="grid">
+    <div class="card"><div class="label">html</div><div class="value" id="c-html">–</div></div>
+    <div class="card"><div class="label">picture</div><div class="value" id="c-picture">–</div></div>
+    <div class="card"><div class="label">other (pdf, doc…)</div><div class="value" id="c-other">–</div></div>
+    <div class="card"><div class="label">graph (cạnh)</div><div class="value" id="c-graph">–</div></div>
+    <div class="card"><div class="label">Dung lượng</div><div class="value" id="size">–</div><div class="sub" id="size-disk"></div></div>
+  </div>
+
+  <h2>Theo thời gian</h2>
+  <div class="card chart-card">
+    <div class="legend"><span><i style="background:var(--accent)"></i>Đã gửi</span><span><i style="background:var(--ok)"></i>Bản ghi đã lưu</span><span id="chart-range"></span></div>
+    <svg id="chart" preserveAspectRatio="none"></svg>
+  </div>
+
+  <h2>Bản ghi mới thêm</h2>
+  <div class="card table-wrap">
+    <table>
+      <thead><tr><th>Lúc</th><th>Loại</th><th>Tiêu đề / url</th></tr></thead>
+      <tbody id="recent"><tr><td colspan="3" class="muted">Đang tải…</td></tr></tbody>
+    </table>
+  </div>
+  </section>
+
+  <section id="tab-search" hidden>
+  <form class="bar" id="form">
+    <input type="search" id="q" placeholder="Nhập từ khoá…" autofocus>
+    <button type="submit">Tìm</button>
+  </form>
+  <div class="opts">
+    <span id="chips"></span>
+    <select id="profile" title="Cấu hình xếp hạng">
+      <option value="A">A: BM25 thuần</option>
+      <option value="B">B: + bigram, không dấu</option>
+      <option value="C">C: + rerank cụm từ, PageRank</option>
+      <option value="D" selected>D: + lọc rác, trùng</option>
+    </select>
+    <label><input type="checkbox" id="fresh"> Ưu tiên mới</label>
+  </div>
+  <div id="status"></div>
+  <div id="split">
+    <div>
+      <div id="results"></div>
+      <div class="pager">
+        <button class="ghost" id="prev" disabled>Trước</button>
+        <span id="pageno" class="muted"></span>
+        <button class="ghost" id="next" disabled>Sau</button>
+      </div>
+    </div>
+    <aside id="preview" class="card" hidden>
+      <div id="pv-head">
+        <div>
+          <div id="pv-title"></div>
+          <div class="meta" id="pv-url"></div>
+          <div class="meta" id="pv-meta"></div>
+        </div>
+        <button type="button" class="ghost" id="pv-close" title="Đóng (Esc)">×</button>
+      </div>
+      <div id="pv-body"></div>
+    </aside>
+  </div>
+  <div class="foot"><button class="ghost" id="reindex">Index lại</button><span id="reindex-msg"></span></div>
+  </section>
+</main>
+<script>
+const params = new URLSearchParams(location.search);
+const MEDIATOR = params.get('mediator') || 'http://localhost:5200';
+const STORAGE = params.get('storage') || 'http://localhost:2222';
+const READER = params.get('reader') || 'http://localhost:6600';
+const SEARCH = params.get('search') || 'http://localhost:7700';
+const POLL_MS = 5000, WINDOW_MS = 5 * 60 * 1000, KEEP = 720;  // 720 mẫu * 5 s = 1 giờ
+const KEY = 'crawl-dashboard-samples';
+
+const $ = (id) => document.getElementById(id);
+const fmt = (n) => n == null ? '–' : Number(n).toLocaleString('vi-VN');
+const bytes = (b) => b == null ? '–' : b > 1e9 ? (b / 1e9).toFixed(2) + ' GB' : (b / 1e6).toFixed(1) + ' MB';
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+let samples = [];
+try { samples = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { samples = []; }
+
+async function getJson(url, opts) {
+  const r = await fetch(url, { ...opts, signal: AbortSignal.timeout(4000) });
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+const dot = (id, ok) => { $(id).className = 'dot ' + (ok ? 'ok' : 'bad'); };
+
+function duration(sec) {
+  if (!isFinite(sec) || sec <= 0) return '–';
+  const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600), m = Math.round(sec % 3600 / 60);
+  return d ? `${d} ngày ${h} giờ` : h ? `${h} giờ ${m} phút` : `${m} phút`;
+}
+
+function drawChart() {
+  const svg = $('chart'), w = svg.clientWidth || 600, h = 160, pad = 4;
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  const pts = samples.filter((s) => s.sent != null || s.records != null);
+  if (pts.length < 2) { svg.innerHTML = `<text x="8" y="20" fill="currentColor" opacity=".5" font-size="12">Đang gom số liệu…</text>`; return; }
+  const t0 = pts[0].t, t1 = pts[pts.length - 1].t;
+  const line = (key, color) => {
+    const vals = pts.filter((s) => s[key] != null);
+    if (vals.length < 2) return '';
+    const lo = Math.min(...vals.map((s) => s[key])), hi = Math.max(...vals.map((s) => s[key])) || 1;
+    const xy = vals.map((s) => [pad + (s.t - t0) / (t1 - t0 || 1) * (w - 2 * pad),
+      h - pad - (s[key] - lo) / (hi - lo || 1) * (h - 2 * pad)]);
+    return `<polyline fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" points="${xy.map((p) => p.join(',')).join(' ')}"/>`;
+  };
+  svg.innerHTML = line('sent', 'var(--accent)') + line('records', 'var(--ok)');
+  $('chart-range').textContent = `${new Date(t0).toLocaleTimeString('vi-VN')} → ${new Date(t1).toLocaleTimeString('vi-VN')}`;
+}
+
+async function refresh() {
+  const now = Date.now(), sample = { t: now };
+  try {
+    const s = await getJson(MEDIATOR + '/status');
+    dot('dot-mediator', true);
+    const running = s.status === 'đang chạy';
+    $('state').textContent = running ? 'Đang chạy' : 'Đã dừng';
+    $('state').className = 'pill ' + (running ? 'run' : 'stop');
+    $('start').disabled = running; $('stop').disabled = !running;
+    sample.sent = s.total - s.due; sample.due = s.due;
+    $('total').textContent = fmt(s.total); $('due').textContent = fmt(s.due); $('sent').textContent = fmt(sample.sent);
+    $('sent-pct').textContent = s.total ? (sample.sent / s.total * 100).toFixed(1) + '% tổng' : '';
+  } catch {
+    dot('dot-mediator', false);
+    $('state').textContent = 'Không kết nối được'; $('state').className = 'pill down';
+    $('start').disabled = $('stop').disabled = true;
+  }
+  try {
+    const st = await getJson(STORAGE + '/stats');
+    dot('dot-storage', true);
+    for (const c of ['html', 'picture', 'other', 'graph']) $('c-' + c).textContent = fmt(st.counts[c]);
+    sample.records = st.counts.html + st.counts.picture + st.counts.other;
+    $('size').textContent = bytes(st.dataBytes);
+    $('size-disk').textContent = 'trên đĩa ' + bytes(st.storageBytes) + ' (đã nén)';
+    $('recent').innerHTML = st.recent.length ? st.recent.map((r) => `<tr>
+        <td class="muted">${r.updatedAt ? new Date(r.updatedAt).toLocaleTimeString('vi-VN') : ''}</td>
+        <td><span class="tag">${esc(r.collection)} · ${esc(r.format)}</span></td>
+        <td class="url">${esc(r.title) || '<span class="muted">(không tiêu đề)</span>'}<br><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a></td>
+      </tr>`).join('') : '<tr><td colspan="3" class="muted">Chưa có bản ghi.</td></tr>';
+  } catch { dot('dot-storage', false); }
+  try {
+    const p = await getJson(READER + '/ping');
+    dot('dot-reader', true);
+    $('reader-busy').textContent = p.dang_xu_ly ? `(đang xử lý ${p.dang_xu_ly})` : '';
+  } catch { dot('dot-reader', false); $('reader-busy').textContent = ''; }
+
+  samples.push(sample);
+  samples = samples.slice(-KEEP);
+  try { localStorage.setItem(KEY, JSON.stringify(samples)); } catch {}
+
+  // tốc độ = số url đã gửi tăng thêm trong 5 phút gần nhất
+  const recent = samples.filter((s) => s.sent != null && now - s.t <= WINDOW_MS);
+  if (recent.length >= 2 && sample.sent != null) {
+    const a = recent[0], perMin = (sample.sent - a.sent) / ((now - a.t) / 60000);
+    $('rate').textContent = perMin > 0 ? perMin.toFixed(0) : '0';
+    $('eta').textContent = perMin > 0 ? duration(sample.due / perMin * 60) : '–';
+  }
+  $('updated').textContent = 'cập nhật ' + new Date(now).toLocaleTimeString('vi-VN');
+  drawChart();
+}
+
+async function command(path) {
+  $('start').disabled = $('stop').disabled = true;
+  try { await getJson(MEDIATOR + path, { method: 'POST' }); } catch (e) { alert('Không gửi được lệnh: ' + e.message); }
+  refresh();
+}
+$('start').onclick = () => command('/start');
+$('stop').onclick = () => command('/stop');
+addEventListener('resize', drawChart);
+// ---------- Tabs + tìm kiếm ----------
+const SIZE = 10, MAX = 100;  // engine chỉ rerank top 100
+const TYPES = [['', 'Tất cả'], ['html', 'Trang'], ['other', 'Tài liệu'], ['picture', 'Ảnh']];
+const PREVIEW_CHARS = 200000;
+const MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml', bmp: 'image/bmp' };
+let tab = 'crawl', type = '', page = 1, total = 0, docs = null, searched = false, selUrl = null, pvToken = 0;
+
+TYPES.forEach(([v, label]) => {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'chip'; b.textContent = label; b.dataset.v = v;
+  b.onclick = () => { type = v; page = 1; run(); };
+  $('chips').appendChild(b);
+});
+
+function saveState() {
+  const h = tab === 'search'
+    ? new URLSearchParams({ tab, q: $('q').value, type, profile: $('profile').value, page, fresh: $('fresh').checked ? 1 : 0 })
+    : new URLSearchParams({ tab });
+  history.replaceState(null, '', '#' + h);
+}
+function loadState() {
+  const h = new URLSearchParams(location.hash.slice(1));
+  $('q').value = h.get('q') || '';
+  type = TYPES.some((t) => t[0] === h.get('type')) ? h.get('type') : '';
+  $('profile').value = ['A', 'B', 'C', 'D'].includes(h.get('profile')) ? h.get('profile') : 'D';
+  $('fresh').checked = h.get('fresh') === '1';
+  page = Math.max(1, parseInt(h.get('page')) || 1);
+  return h.get('tab') === 'search' ? 'search' : 'crawl';
+}
+
+function showTab(t) {
+  tab = t;
+  $('tab-crawl').hidden = t !== 'crawl'; $('tab-search').hidden = t !== 'search';
+  document.querySelector('.crawl-only').hidden = t !== 'crawl';
+  document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('on', b.dataset.tab === t));
+  if (t === 'crawl') { saveState(); drawChart(); return; }
+  if (!searched) {
+    searched = true;
+    fetch(SEARCH + '/ping').then((r) => r.json()).then((j) => { docs = j.docs; run(); }).catch(() => run());
+  } else saveState();
+}
+document.querySelectorAll('.tab').forEach((b) => { b.onclick = () => showTab(b.dataset.tab); });
+
+function render(hit) {
+  const card = document.createElement('div'); card.className = 'card hit'; card.dataset.url = hit.url;
+  card.classList.toggle('sel', hit.url === selUrl);
+  const t = document.createElement('a'); t.className = 't';
+  t.textContent = hit.title || hit.url;
+  if (/^https?:\/\//i.test(hit.url || '')) { t.setAttribute('href', hit.url); t.setAttribute('target', '_blank'); t.setAttribute('rel', 'noopener'); }
+  const meta = document.createElement('div'); meta.className = 'meta';
+  const u = document.createElement('span'); u.textContent = hit.url + ' ';
+  const tag = document.createElement('span'); tag.className = 'tag'; tag.textContent = hit.collection + (hit.format ? '/' + hit.format : '');
+  meta.append(u, tag);
+  if (hit.updatedAt) { const d = document.createElement('span'); d.textContent = ' ' + new Date(hit.updatedAt).toLocaleDateString('vi-VN'); meta.append(d); }
+  const s = document.createElement('div'); s.className = 'snip';
+  s.innerHTML = hit.snippet || '';  // server đã escape HTML, chỉ thêm <b>
+  card.append(t, meta, s);
+  card.onclick = (e) => { if (!e.target.closest('a.t')) openPreview(hit, card); };
+  return card;
+}
+
+function closePreview() {
+  pvToken++; selUrl = null;
+  $('preview').hidden = true; $('split').classList.remove('open');
+  document.querySelectorAll('.hit.sel').forEach((c) => c.classList.remove('sel'));
+}
+async function openPreview(hit, card) {
+  const my = ++pvToken;  // bỏ qua phản hồi cũ nếu người dùng bấm thẻ khác
+  selUrl = hit.url;
+  document.querySelectorAll('.hit.sel').forEach((c) => c.classList.remove('sel'));
+  card.classList.add('sel');
+  $('split').classList.add('open'); $('preview').hidden = false; $('preview').scrollTop = 0;
+  $('pv-title').textContent = hit.title || hit.url;
+  $('pv-url').replaceChildren(); $('pv-meta').replaceChildren();
+  const body = $('pv-body'); body.textContent = 'Đang tải…';
+  let r;
+  try {
+    const resp = await fetch(STORAGE + '/record?' + new URLSearchParams({ collection: hit.collection, url: hit.url }));
+    if (my !== pvToken) return;
+    if (resp.ok) r = await resp.json();
+    else {
+      let msg = 'HTTP ' + resp.status;
+      try { msg = (await resp.json()).detail || msg; } catch {}
+      if (my === pvToken) body.textContent = 'Lỗi: ' + msg;
+      return;
+    }
+  } catch { if (my === pvToken) body.textContent = 'Lỗi: không gọi được ' + STORAGE; return; }
+  if (my !== pvToken) return;
+  $('pv-title').textContent = r.title || r.url;
+  if (/^https?:\/\//i.test(r.url || '')) {
+    const a = document.createElement('a'); a.textContent = r.url;
+    a.setAttribute('href', r.url); a.setAttribute('target', '_blank'); a.setAttribute('rel', 'noopener');
+    $('pv-url').replaceChildren(a);
+  } else $('pv-url').textContent = r.url || '';
+  const tag = document.createElement('span'); tag.className = 'tag'; tag.textContent = r.collection + (r.format ? '/' + r.format : '');
+  const when = document.createElement('span'); when.textContent = r.updatedAt ? ' ' + new Date(r.updatedAt).toLocaleString('vi-VN') : '';
+  $('pv-meta').replaceChildren(tag, when);
+  if (r.collection === 'picture') {
+    if (!r.base64) { body.textContent = 'Ảnh chưa có dữ liệu base64'; return; }
+    const img = document.createElement('img');
+    img.src = `data:${MIME[String(r.format || '').toLowerCase()] || 'application/octet-stream'};base64,${r.base64}`;
+    body.replaceChildren(img);
+  } else {
+    const text = r.content || '';
+    const div = document.createElement('div'); div.id = 'pv-text';
+    div.textContent = text.length > PREVIEW_CHARS ? text.slice(0, PREVIEW_CHARS) + `\n… còn ${(text.length - PREVIEW_CHARS).toLocaleString('vi-VN')} ký tự` : text || '(không có nội dung)';
+    body.replaceChildren(div);
+  }
+}
+$('pv-close').onclick = closePreview;
+addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('preview').hidden) closePreview(); });
+
+function updateStatus(extra) {
+  $('status').textContent = extra + (docs != null ? ` · ${docs.toLocaleString('vi-VN')} tài liệu` : '');
+}
+
+async function run() {
+  closePreview();
+  saveState();
+  document.querySelectorAll('.chip').forEach((b) => b.classList.toggle('on', b.dataset.v === type));
+  const q = $('q').value.trim();
+  if (!q) { $('results').replaceChildren(); total = 0; pager(); updateStatus(''); return; }
+  const p = new URLSearchParams({ q, type, profile: $('profile').value, fresh: $('fresh').checked ? 1 : 0, page, size: SIZE });
+  updateStatus('Đang tìm…');
+  try {
+    const r = await fetch(SEARCH + '/search?' + p);
+    if (!r.ok) throw new Error(r.status);
+    const j = await r.json();
+    total = j.total;
+    $('results').replaceChildren(...j.hits.map(render));
+    pager();
+    updateStatus(`Khoảng ${total.toLocaleString('vi-VN')} kết quả (${j.tookMs} ms)`);
+  } catch (e) {
+    $('results').replaceChildren(); total = 0; pager();
+    updateStatus('Lỗi: không gọi được ' + SEARCH);
+  }
+}
+function pager() {
+  $('prev').disabled = page <= 1;
+  $('next').disabled = page * SIZE >= Math.min(total, MAX);
+  $('pageno').textContent = total ? 'Trang ' + page : '';
+}
+
+$('form').onsubmit = (e) => { e.preventDefault(); page = 1; run(); };
+$('profile').onchange = $('fresh').onchange = () => { page = 1; run(); };
+$('prev').onclick = () => { page--; run(); scrollTo(0, 0); };
+$('next').onclick = () => { page++; run(); scrollTo(0, 0); };
+$('reindex').onclick = async () => {
+  try {
+    const r = await fetch(SEARCH + '/reindex', { method: 'POST' });
+    $('reindex-msg').textContent = (await r.json()).status;
+  } catch { $('reindex-msg').textContent = 'Lỗi: không gọi được ' + SEARCH; }
+};
+
+showTab(loadState());
+// sửa hash tay hoặc bấm Back (saveState dùng replaceState nên không tự kích hoạt sự kiện này)
+window.addEventListener('hashchange', () => {
+  const t = loadState(), again = t === 'search' && searched;
+  showTab(t);
+  if (again) run();
+});
+refresh();
+setInterval(refresh, POLL_MS);
+</script>
+</body>
+</html>

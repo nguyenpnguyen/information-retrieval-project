@@ -1,0 +1,15 @@
+# mediator trong compose.yaml ở gốc repo: các bản sao của service "downloader" cùng mạng.
+port: 5200
+downloaders:                       # khớp với deploy.replicas của downloader trong compose.yaml
+  - http://crawler-downloader-1:8800
+  - http://crawler-downloader-2:8800
+  - http://crawler-downloader-3:8800
+  - http://crawler-downloader-4:8800
+host_delay_seconds: 2.0            # mỗi host tối đa 1 url / 2 giây, tránh bị rate limit
+ping_timeout_seconds: 2
+load_timeout_seconds: 10
+node_cooldown_seconds: 30          # downloader không trả lời thì chừng này giây sau mới hỏi lại
+max_attempts: 5
+tick_seconds: 0.5
+recrawl_days: {hub: 1, page: 7, document: 30}   # kiểm tra lại định kỳ; 0 = không kiểm tra lại
+database: /state/controller.sqlite3

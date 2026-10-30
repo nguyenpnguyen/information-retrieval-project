@@ -1,0 +1,79 @@
+# mediator:5200 → downloader:8800 → reader:6600 → storage:2222 → mongo; reader gửi url mới về mediator.
+# Chạy: docker compose up -d --build
+# Nạp url mầm: curl -X POST localhost:5200/add -H 'Content-Type: application/json' -d '{"urls":["https://hust.edu.vn/"]}'
+name: crawler
+
+services:
+  mongo:
+    image: mongo:7.0
+    environment:
+      MONGO_INITDB_DATABASE: HUST_2026_IT4863_TEST
+    ports: ["127.0.0.1:${MONGO_PORT:-27018}:27017"]
+    volumes:
+      - mongo_data:/data/db
+      # Chỉ chạy khi volume mới tạo; đổi schema thì `docker compose down -v`.
+      - ./storage/document/ddl_create_document.js:/docker-entrypoint-initdb.d/01-schema.js:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "quit(db.adminCommand({ping: 1}).ok ? 0 : 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  storage:
+    build: ./storage
+    environment:
+      SERVER_PORT: "2222"
+      MONGODB_URI: mongodb://mongo:27017/HUST_2026_IT4863_TEST?serverSelectionTimeoutMS=5000
+    ports: ["2222:2222"]
+    depends_on:
+      mongo: {condition: service_healthy}
+    restart: unless-stopped
+
+  search:
+    build: ./search
+    environment:
+      MONGODB_URI: mongodb://mongo:27017/HUST_2026_IT4863_TEST?serverSelectionTimeoutMS=5000
+      INDEX_DIR: /index
+      JAVA_TOOL_OPTIONS: -Xmx2g   # đủ heap để dựng chỉ mục
+    ports: ["7700:7700"]
+    volumes:
+      - search_index:/index
+      - ./search/eval:/app/eval      # file truy vấn / nhãn cho Eval
+    depends_on:
+      mongo: {condition: service_healthy}
+    restart: unless-stopped
+
+  reader:
+    build: ./reader
+    environment:
+      STORAGE_URL: http://storage:2222/add
+      MEDIATOR_URL: http://mediator:5200/add
+      DEMO_FETCH: "0"
+    ports: ["6600:6600"]
+    restart: unless-stopped
+
+  downloader:
+    build: ./downloader
+    environment:
+      READER_URL: http://reader:6600/parse
+    # Đổi số bản sao thì sửa luôn danh sách downloaders trong mediator/config/controller.compose.yaml.
+    deploy: {replicas: 4}
+    restart: unless-stopped
+
+  mediator:
+    build: ./mediator
+    command: ["serve", "--config", "config/controller.compose.yaml"]
+    environment:
+      TZ: Asia/Ho_Chi_Minh
+      MEDIATOR_LOG_FILE: /state/mediator.log
+    ports: ["5200:5200"]
+    volumes:
+      - mediator_state:/state
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
+  mediator_state:
+  search_index:
